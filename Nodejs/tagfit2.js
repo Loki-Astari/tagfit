@@ -84,8 +84,8 @@ app.get('/tagfit2/rest/team/:team_id', function(req, res) {
     var queryStr    = 'SELECT (Year(UI.lastUpdate) + DAYOFYEAR(UI.lastUpdate)) AS Name, sum(UI.Distance) AS Distance '
                     + 'FROM     User U, UserInfo UI '
                     + 'WHERE    U.TeamId=? && UI.UserId=U.Id '
-                    + 'GROUP BY Name '
-                    + 'ORDER BY Name ';
+                    + 'GROUP BY UI.lastUpdate '
+                    + 'ORDER BY UI.lastUpdate ';
     connection.query(queryStr, req.params.team_id, function(err, teams) {
         if (err) {res.send(500);return;}
         if (teams.length > 0)
