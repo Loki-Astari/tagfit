@@ -1,0 +1,14 @@
+<VirtualHost *>
+
+    Header set Access-Control-Allow-Origin "*"
+    ProxyPreserveHost   On
+    ProxyRequests       off
+    ProxyPass           /tagfit2/rest/   http://127.0.0.1:4002/tagfit2/rest/
+    ProxyPassReverse    /tagfit2/rest/   http://127.0.0.1:4002/tagfit2/rest/
+
+	<Proxy *>
+        Order allow,deny
+        Allow from all
+	</Proxy>
+
+</VirtualHost>

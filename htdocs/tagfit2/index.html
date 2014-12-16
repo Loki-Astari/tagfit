@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html ng-app="ship">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.6/angular.min.js"></script>
+    <title>Ship It Week Feb 2014</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css">
+    <style type="text/css">
+.badge-Gold {
+    background-color:   #FFD700
+}
+.badge-Silver {
+    background-color:   #C0C0C0
+}
+.badge-Bronze {
+    background-color:   #8B4513
+}
+.badge {
+    border:             2px solid white
+}
+div.select-mark+.badge {
+    border:             2px solid red
+}
+html, body, #map-canvas {
+    margin:             0;
+    padding:            0;
+    height:             300px;
+}
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBYSUPwY79jaS3Cc7GDIHFzYNvB87UTceA"></script>
+</head>
+<body style="padding-top:50px">
+<script type="text/javascript">
+/*<![[CDATA[*/
+var module = angular.module('ship', []).directive('onFinishRender', function ($timeout) {
+    /*jslint unparam:true */
+    var result = {
+        restrict: 'A',
+        link: function (scope, element, attr) {
+            if (scope.$last === true) {
+                $timeout(function () {
+                    scope.$emit(attr.onFinishRender);
+                });
+            }
+        }
+    };
+    /*jslint unparam:false */
+    return result;
+});
+
+var directionsService;
+var directionsDisplay;
+var map;
+var route;
+
+oldMarkers  = [];
+
+function centerMapOnMarker() {
+    if (oldMarkers.length > 0) {
+        var bounds = new google.maps.LatLngBounds();
+        for (var loop = 0; loop < oldMarkers.length; loop++) {
+              bounds.extend(oldMarkers[loop].position);
+        }
+        //  Fit these bounds to the map
+        map.fitBounds(bounds);
+    }
+}
+function removeOldMarkers() {
+    for (var i = 0; i < oldMarkers.length; i++) {
+        oldMarkers[i].setMap(null);
+    }
+    oldMarkers = [];
+}
+function addMarker(point, text) {
+    var marker = new google.maps.Marker({
+        position: point,
+        map: map,
+        title: text
+  });
+  oldMarkers.push(marker);
+}
+
+function distanceBetweenPoints(p1, p2) {
+    var R = 6371000; // m
+    var lat1Rad = p1.lat() * Math.PI / 180;
+    var lat2Rad = p2.lat() * Math.PI / 180;
+    var latDiff = (p2.lat()-p1.lat()) * Math.PI / 180;
+    var lonDiff = (p2.lng()-p1.lng()) * Math.PI / 180;
+
+    var a = Math.sin(latDiff/2) * Math.sin(latDiff/2) +
+            Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+            Math.sin(lonDiff/2) * Math.sin(lonDiff/2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    var d = R * c;
+    return d;
+}
+
+function markWayPoints(markerInfo) {
+    var routeInfo   = route.routes[0];
+    var legInfo     = routeInfo.legs[0];
+    var stepInfo    = legInfo.steps;
+
+    var distance    = 0;
+    var oldDistance = 0;
+    var currentStep = 0;
+    for(var i in markerInfo) {
+        var mark = markerInfo[i];
+        var markPoint;
+        if (mark.Distance == 0) {
+            markPoint = stepInfo[0].start_point;
+        }
+        else {
+            for(;currentStep < stepInfo.length && distance < mark.Distance;currentStep++) {
+                oldDistance = distance;
+                distance    = oldDistance + stepInfo[currentStep].distance.value;
+            }
+            console.log('D: ' + distance + ' MD: ' + mark.Distance);
+            var activeStep = currentStep - 1;
+            if (activeStep < stepInfo.length) {
+                    if (distance == mark.Distance) {
+                        markPoint = stepInfo[activeStep + 1].end_point;
+                    }
+                    else {
+                        console.log('3');
+                        /*
+                        if (stepInfo[activeStep].distance.value < 5000) {
+                            var percent   = (mark.Distance - oldDistance)/(distance - oldDistance);
+                            var st = stepInfo[activeStep].start_location;
+                            var ed = stepInfo[activeStep].end_location;
+                            var lat = st.lat() + (ed.lat() - st.lat()) * percent;
+                            var lng = st.lng() + (ed.lng() - st.lng()) * percent;
+                            markPoint = new google.maps.LatLng(lat, lng);
+                        }
+                        else*/ {
+                            var pathInfo = stepInfo[activeStep].path;
+                            var legToDo  = mark.Distance - oldDistance;
+                            var p = 1;
+                            for(;(legToDo > 0) && (p < pathInfo.length); p++) {
+                                pathDis = distanceBetweenPoints(pathInfo[p-1], pathInfo[p]);
+                                legToDo -= pathDis;
+                            }
+                            console.log('LegToDo: ' + legToDo);
+                            markPoint = stepInfo[activeStep].lat_lngs[p];
+                        }
+                    }
+            }
+            else {
+                console.log('4');
+                markPoint = stepInfo[stepInfo.length-1].end_point;
+            }
+        }
+        addMarker(markPoint, mark.Name);
+    }
+}
+/*
+function getQueryVariable(variable)
+{
+    var query = location.search.substring(1);
+    var vars  = query.split("&");
+    for (var i=0; i<vars.length; i++) {
+        var pair = vars[i].split("=");
+        if(pair[0] == variable){
+            return pair[1];
+        }
+    }
+    return(null);
+}
+*/
+function updateMap(team) {
+    removeOldMarkers();
+    var url  = '/tagfit2/rest/team';
+    if (team != null) {
+        url += '/' + team;
+    }
+    $.get(
+        url,
+        function(data, textStatus, request) {
+            if (request.status === 200) {
+                console.log(data);
+
+                markWayPoints(data.items);
+            }
+        },
+        "json"
+    );
+}
+function initialize() {
+    directionsService = new google.maps.DirectionsService();
+    directionsDisplay = new google.maps.DirectionsRenderer();
+    var mapOptions = {
+        disableDefaultUI: true,
+        center: { lat: 45.5964428, lng: -98.0433017 },
+        zoom: 5
+    };
+    map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
+    directionsDisplay.setMap(map);
+    var request = {
+        origin: '2nd and Senica Seattle',
+        destination: 'Times Square New York',
+        travelMode: google.maps.TravelMode.DRIVING
+    };
+    directionsService.route(request, function(result, status) {
+        route = result;
+        if (status == google.maps.DirectionsStatus.OK) {
+            directionsDisplay.setDirections(result);
+
+            updateMap();
+        }
+    });
+}
+
+function map($scope) {
+}
+function tagfit($scope) {
+    $scope.Name     = 'Teams';
+    $scope.items    = [];
+    $scope.updateMapFromScope=function(team){updateMap(team);}
+    $scope.centerMapFromScope=function(){centerMapOnMarker();}
+    $scope.joinTeamFromScope=function(team){
+        $.get(
+            '/tagfit2/rest/join/' + team,
+            function(data, textStatus, request) {
+                if (request.status === 200) {
+                    $scope.user     = data;
+                    $scope.$apply();
+                }
+            },
+            "json"
+        );
+    };
+
+    $.get(
+        '/tagfit2/rest/team' + location.search,
+        function(data, textStatus, request) {
+            if (request.status === 200) {
+                $scope.Name     = data.Name;
+                $scope.items    = data.items.reverse();
+                $.get(
+                    '/tagfit2/rest/curentUser',
+                    function(data, textStatus, request) {
+                        if (request.status === 200) {
+                            $scope.user     = data;
+                            $scope.$apply();
+                        }
+                    },
+                    "json"
+                );
+            }
+        },
+        "json"
+    );
+}
+
+google.maps.event.addDomListener(window, 'load', initialize);
+/*]]>*/
+</script>
+<div ng-controller="tagfit">
+    <div id="navbar" class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container">
+            <div class="nav navbar-header navbar-right">
+            </div>
+
+            <ul class="nav navbar-nav navbar-right">
+                <li ng-show="user.loggedin"><a href="#">User: {{ user.display }}</a></li>
+                <li ng-show="user.loggedin"><a href="/tagfit2/rest/logout"><sup>logout</sup></a></li>
+                <li ng-show="user.loggedin && !user.team">
+                    <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">Join Team<span class="caret"></span></a>
+                    <ul class="dropdown-menu" role="menu">
+                        <li><a ng-repeat="team in user.teams" ng-click="joinTeamFromScope(team.Id)">{{ team.Name }}</a></li>
+                    </ul>
+                </li>
+                <li ng-show="!user.loggedin" class="dropdown">
+                    <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">Login<span class="caret"></span></a>
+                    <ul class="dropdown-menu" role="menu">
+                        <li><a href="/tagfit2/rest/fitbit">FitBit</a></li>
+                        <li><a href="/tagfit2/rest/moves">Moves</a></li>
+                    </ul>
+                </li>
+            </ul>
+
+            <div class="navbar-header">
+                <a class="navbar-brand" href="#">Tag Fit 2</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row" style="height:30px"></div>
+        <div class="row">
+            <div class="col-xs-10 col-xs-offset-1">
+                <div class="panel panel-default">
+                    <div class="panel-heading"><a ng-click="updateMapFromScope()">{{ Name }}</a>
+                    <span class="navbar-right"><a ng-click="centerMapFromScope()">Center</a></span>
+                    </div>
+                    <div class="row" ng-controller="map">
+                        <div id="map-canvas"></div>
+                    </div>
+                    <ul class="list-group">
+                        <li class="list-group-item" ng-repeat="item in items">
+                            <span class="badge" style="width:80px">{{ item.Distance }}</span>
+                            <span style="width:200px"><a ng-click="updateMapFromScope(item.Id)">{{ item.Name }}</a></span> -
+                            <span style="width:200px">{{ item.lastUpdate }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script type="text/javascript" src="http://code.jquery.com/ui/1.10.3/jquery-ui.js"></script>
+    <script type="text/javascript" src="//netdna.bootstrapcdn.com/bootstrap/3.0.2/js/bootstrap.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+    "name": "tagfit",
+    "description": "th api layer for tagfit",
+    "version": "0.0.1",
+    "private": true,
+    "dependencies": {
+        "express": "3.4.6",
+        "passport": ">= 0.0.0",
+        "passport-fitbit": ">= 0.0.0",
+        "mysql": ">= 0.0.0",
+        "oauth-signature": ">= 0.0.0",
+        "https": ">= 0.0.0",
+        "http": ">= 0.0.0",
+        "randomString" : ">= 0.0.0"
+    }
+}
