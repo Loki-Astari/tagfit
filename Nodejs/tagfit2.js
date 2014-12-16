@@ -61,10 +61,10 @@ app.get('/tagfit2/rest/version', function(req, res) {
 app.get('/tagfit2/rest/team', function(req, res) {
     var connection  = persistance.getConnect();
     //var queryStr    = 'SELECT * FROM Team ORDER BY Distance';
-    var queryStr = 'SELECT T.Id, T.Name, TD.Distance '
+    var queryStr = 'SELECT T.Id, T.Name, TD.Distance, TD.Count '
                  + 'FROM Team T '
                  + 'LEFT JOIN '
-                 +       '(SELECT U.TeamId, SUM(Distance) AS Distance '
+                 +       '(SELECT U.TeamId, count(*) AS Count, SUM(Distance) AS Distance '
                  +       ' FROM User U, UserInfo UI '
                  +       ' WHERE U.Id = UI.UserId '
                  +       ' GROUP by U.TeamId'

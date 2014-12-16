@@ -303,9 +303,17 @@ google.maps.event.addDomListener(window, 'load', initialize);
                     </div>
                     <ul class="list-group">
                         <li class="list-group-item" ng-repeat="item in items">
-                            <span class="badge" style="width:80px">{{ item.Distance }}</span>
-                            <span style="width:200px"><a ng-click="updateMapFromScope(item.Id)">{{ item.Name }}</a></span> -
-                            <span style="width:200px">{{ item.lastUpdate }}</span>
+                            <div class="row">
+                                <div class="col-sm-4">
+                                    <span style="min-width:200px"><a ng-click="updateMapFromScope(item.Id)">{{ item.Name }}</a></span>
+                                 </div>
+                                <div class="col-sm-4">
+                                    <span ng-show="item.Count > 0">{{ item.Count }} members</span>
+                                </div>
+                                <div class="col-sm-4">
+                                    <p class="text-right"><span class="badge">{{ item.Distance }}</span></p>
+                                </div>
+                            </div>
                         </li>
                     </ul>
                 </div>
