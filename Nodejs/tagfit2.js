@@ -292,7 +292,7 @@ function updateUserInfo(user) {
             for(var loop = 0;loop < distance.length; loop++) {
                 if (distance[loop].activity == 'total') {
                     var distanceValue = distance[loop].distance * 1000;
-                    updateUserInfoInDB(resp[0].Id, resp[0].LastUpdate, date, distanceValue);
+                    updateUserInfoInDB(resp[loop].Id, resp[loop].LastUpdate, date, distanceValue);
                     break;
                 }
             }
