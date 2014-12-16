@@ -72,7 +72,7 @@ app.get('/tagfit2/rest/team', function(req, res) {
                  + 'ON   T.Id=TD.TeamId '
                  + 'ORDER BY TD.Distance';
     connection.query(queryStr, function(err, teams) {
-        if (err) {res.send(500);return;}
+        if (err) {console.log('/tagfit2/rest/team E1: ' + err);res.send(500);return;}
         for(var loop=0;loop < teams.length;loop++) {
             if (!teams[loop].Distance) { teams[loop].Distance = 0;}
         }
@@ -87,7 +87,7 @@ app.get('/tagfit2/rest/team/:team_id', function(req, res) {
                     + 'GROUP BY UI.lastUpdate '
                     + 'ORDER BY UI.lastUpdate ';
     connection.query(queryStr, req.params.team_id, function(err, teams) {
-        if (err) {res.send(500);return;}
+        if (err) {console.log('/tagfit2/rest/team/:team_id $2: ' + err);res.send(500);return;}
         if (teams.length > 0)
         {
             var start   = teams[0].Name - 1;
@@ -108,9 +108,11 @@ app.get('/tagfit2/rest/curentUser', function(req, res) {
         var connection  = persistance.getConnect();
         var queryStr    = "SELECT T.Name FROM User U, Team T WHERE U.Id=? && U.TeamId = T.Id";
         connection.query(queryStr, req.user.id, function(err, data) {
+            if (err) {console.log('/tagfit2/rest/curentUser E3: ' + err);res.send(500);return;}
             if (data.length == 0) {
                 var teamNames   = "SELECT Id, Name FROM Team";
                 connection.query(teamNames, function(err, data) {
+                    if (err) {console.log('/tagfit2/rest/curentUser E4: ' + err);res.send(500);return;}
                     res.json({loggedin: true, display: req.user.display, team: false, teams: data});
                 });
             }
@@ -128,12 +130,15 @@ app.get('/tagfit2/rest/join/:team_id', function(req, res) {
         var connection  = persistance.getConnect();
         var queryStr    = "SELECT T.Name FROM User U, Team T WHERE U.Id=? && U.TeamId = T.Id";
         connection.query(queryStr, req.user.id, function(err, userData) {
+            if (err) {console.log('/tagfit2/rest/join/:team_id E5: ' + err);res.send(500);return;}
             if (userData.length == 0) {
                 var validateStr = "SELECT Name FROM Team where Id=?";
                 connection.query(validateStr, req.params.team_id, function(err, teamData) {
+                    if (err) {console.log('/tagfit2/rest/join/:team_id E6: ' + err);send(500);return;}
                     if (teamData.length > 0) {
                         var joinStr = "UPDATE User set TeamId=? where Id=?";
                         connection.query(joinStr, [req.params.team_id, req.user.id], function(err, insert) {
+                            if (err) {console.log('/tagfit2/rest/join/:team_id E7: ' + err);send(500);return;} 
                             res.json({loggedin: true, display: req.user.display + '(' + teamData[0].Name + ')', team: true});
                         });
                     }
@@ -157,7 +162,7 @@ app.get('/tagfit2/rest/logout',  function(req, res, next) {
 });
 function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, actionCallback) {
 
-    if(typeof(actionCallback) === 'undefined')  {actionCallback = function(body){};}
+    if(typeof(actionCallback) === 'undefined')  {actionCallback = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
 
     var consumerSecret  = config.passport.fitbit.consumerSecret;
     var time        = Math.floor(new Date().getTime()/1000);
@@ -193,12 +198,12 @@ function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, a
                 data    += chunk;
             });
             sendResponse.on('end', function() {
-                actionCallback(data);
+                actionCallback(null, data);
             });
         }
     );
     sendRequest.on('error', function(error) {
-        console.log(httpMethod + ' ' + httpType + '://' + host + path + ' ERROR => ' + error);
+        actionCallback(httpMethod + ' ' + httpType + '://' + host + path + ' ERROR => ' + error);
     });
     sendRequest.end();
 }
@@ -206,6 +211,8 @@ function subscribeUser(userId, token, tokenSecret) {
     makeHttpRequest('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/' + userId + '.json', token, tokenSecret);
 }
 
+
+// Fitbit login callback point
 app.get('/tagfit2/rest/callback',  function(req, res, next) {
     passport.authenticate('fitbit', function(err, user) {
         if (err)        { return next(err) }
@@ -218,10 +225,11 @@ app.get('/tagfit2/rest/callback',  function(req, res, next) {
 
     })(req, res, next);
 });
+// Fitbit login request.
 app.get('/tagfit2/rest/fitbit',
   function(req, res, next) {
     passport.authenticate('fitbit', function(err, user, info) {
-      if (err) { return res.send({'status':'err','message':err.message}); }
+      if (err)   { return res.send({'status':'err','message':err.message}); }
       if (!user) { return res.send({'status':'fail','message':info.message}); }
       req.logIn(user, function(err) {
         if (err) { return res.send({'status':'err','message':err.message}); }
@@ -230,10 +238,10 @@ app.get('/tagfit2/rest/fitbit',
     })(req, res, next);
   },
   function(err, req, res, next) {
-    // failure in login test route
     return res.send({'status':'err','message':err.message});
   }
 );
+// Fitbit sends update when user syncs device.
 app.post('/tagfit2/rest/fitbitupdate',
   function(req, res, next) {
 
@@ -283,10 +291,11 @@ function updateUserInfo(user) {
     var connection  = persistance.getConnect();
     var queryStr    = "SELECT Id, Token, TokenSecret, DATE_FORMAT(lastUpdate, '%Y-%m-%d') AS LastUpdate FROM User WHERE Service=? and UserId=?";
     connection.query(queryStr, [provider, owner], function(err, resp) {
-        if (err)                {console.log('Error: ' + err);return;}
-        if (resp.length != 1)   {console.log('User Not Correct: ' + provider + ' ' + owner);return;}
+        if (err)                {console.log('updateUserInfo: E8: ' + err);return;}
+        if (resp.length != 1)   {console.log('updateUserInfo: E9: ' + provider + ' ' + owner);return;}
 
-        makeHttpRequest('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', resp[0].Token, resp[0].TokenSecret, function(res){
+        makeHttpRequest('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', resp[0].Token, resp[0].TokenSecret, function(err, res){
+            if (err) {console.log('updateUserInfo: E10: ' + err);return;}
             var activity    = JSON.parse(res);
             var distance    = activity.summary.distances;
             for(var loop = 0;loop < distance.length; loop++) {
@@ -306,10 +315,10 @@ function updateUserInfoInDB(userId, lastUpdate, thisUpdate, distance) {
     if (lastUpdate != thisUpdate) {
         var insertStr   = "INSERT INTO UserInfo (UserId, lastUpdate, Distance) VALUES(?, ?, ?)";
         connection.query(insertStr, [userId, thisUpdate, distance], function(err, rep) {
-            if (err) {console.log('1: ' + err);return;}
+            if (err) {console.log('updateUserInfoInDB: E11: ' + err);return;}
             var updateStr   = "UPDATE User Set lastUpdate=? where Id=?";
             connection.query(updateStr,[thisUpdate, userId], function(err, rep) {
-                if (err) {console.log('2: ' + err);return;}
+                if (err) {console.log('updateUserInfoInDB: E12: ' + err);return;}
                 console.log('User: ' + userId + ' NewData: ' + distance + ' For: ' + thisUpdate);
             });
         });
@@ -317,14 +326,11 @@ function updateUserInfoInDB(userId, lastUpdate, thisUpdate, distance) {
     else {
         var updateStr   = "UPDATE UserInfo SET Distance=? WHERE UserId=? AND lastUpdate=?";
         connection.query(updateStr, [distance, userId, lastUpdate], function(err, rep) {
-            if (err) {console.log('3: ' + err);return}
+            if (err) {console.log('updateUserInfoInDB: E13: ' + err);return}
             console.log('User: ' + userId + ' Update: ' + distance + ' For: ' + thisUpdate);
         });
     }
 }
-
-
-
 
 
 app.listen(4002);
