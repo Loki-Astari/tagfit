@@ -23,8 +23,8 @@ passport.use(new FitbitStrategy(
         connection.query(queryStr, [profile.provider, profile.id], function(err, resp) {
             if (err) done(err);
             if (resp.length == 0)
-            {
-                var addUserQuery = "INSERT INTO User (Name, Service, UserId, Token, TokenSecret, TeamId) VALUES(?, ?, ?, ?, ?, NULL)";
+            {// Name  Service UserId Token TokenSecret TeamId lastUpdate
+                var addUserQuery = "INSERT INTO User (Name, Service, UserId, Token, TokenSecret, TeamId, lastUpdate) VALUES(?, ?, ?, ?, ?, NULL, subdate(now(), 2))";
                 connection.query(addUserQuery, [profile.displayName, profile.provider, profile.id, token, tokenSecret], function(err, resp) {
                     if (err) done(err);
                     process.nextTick(function() {subscribeUser(profile.id, token, tokenSecret);});
