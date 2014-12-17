@@ -333,6 +333,6 @@ function updateUserInfoInDB(userId, lastUpdate, thisUpdate, distance) {
 }
 
 
-app.listen(4002);
-console.log('Listening on port: 4002');
+app.listen(config.port);
+console.log('Listening on port: ' + config.port);
 
