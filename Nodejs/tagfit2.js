@@ -178,20 +178,24 @@ app.get('/tagfit2/rest/version', function(req, res) {
 app.get('/tagfit2/rest/team', function(req, res) {
     var connection  = persistance.getConnect();
     //var queryStr    = 'SELECT * FROM Team ORDER BY Distance';
-    var queryStr = 'SELECT T.Id, T.Name, TD.Distance, TD.Count '
+    var queryStr = 'SELECT T.Id, T.Name, count(*) AS Count, sum(TD.Distance) as Distance '
                  + 'FROM Team T '
-                 + 'LEFT JOIN '
-                 +       '(SELECT U.TeamId, count(*) AS Count, SUM(Distance) AS Distance '
-                 +       ' FROM User U, UserInfo UI '
-                 +       ' WHERE U.Id = UI.UserId '
-                 +       ' GROUP by U.TeamId'
+                 + 'LEFT JOIN  '
+                 +       '(SELECT U.Id, U.TeamId, SUM(Distance) AS Distance '
+                 +       'FROM User U, UserInfo UI '
+                 +       'WHERE U.Id = UI.UserId '
+                 +       'GROUP BY U.Id'
                  +       ') TD '
-                 + 'ON   T.Id=TD.TeamId '
-                 + 'ORDER BY TD.Distance';
+                 + 'ON T.Id=TD.TeamId '
+                 + 'Group by T.Id '
+                 + 'ORDER BY Distance';
     connection.query(queryStr, function(err, teams) {
         if (err) {console.log('/tagfit2/rest/team E1: ' + err);res.send(500);return;}
         for(var loop=0;loop < teams.length;loop++) {
-            if (!teams[loop].Distance) { teams[loop].Distance = 0;}
+            if (!teams[loop].Distance) {
+                teams[loop].Distance = 0;
+                teams[loop].Count = null;
+            }
         }
          res.json({Name: 'Team', items: teams});
     });
