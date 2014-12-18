@@ -10,12 +10,54 @@ var randomString    = require("randomstring");
 var config          = require('../config.js');
 
 
-passport.serializeUser(function(user, done) {
-    done(null, user);
-});
-passport.deserializeUser(function(obj, done) {
-    done(null, obj);
-});
+function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, actionCallback) {
+
+    if(typeof(actionCallback) === 'undefined')  {actionCallback = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
+
+    var consumerSecret  = config.passport.fitbit.consumerSecret;
+    var time        = Math.floor(new Date().getTime()/1000);
+    var nonce       = randomString.generate(16);
+    var parameters  = {
+        'oauth_consumer_key':     config.passport.fitbit.consumerKey,
+        'oauth_nonce':            nonce,
+        'oauth_signature_method': 'HMAC-SHA1',
+        'oauth_timestamp':        time,
+        'oauth_token':            token,
+        'oauth_version':          '1.0'
+    };
+
+    encodedSignature = oauthSignature.generate(httpMethod, httpType + '://' + host + path, parameters, consumerSecret, tokenSecret);
+
+    var oauthString   = "OAuth ";
+    Object.keys(parameters).forEach(function(key) {
+        oauthString   += key + '="' + parameters[key] + '", ';
+    });
+    oauthString += 'oauth_signature="' + encodedSignature + '"';
+
+    var action = httpType == "https" ? https : http;
+    var sendRequest = action.request(
+        {   method:   httpMethod,
+            hostname: host,
+            path:     path,
+            headers:  {Authorization: oauthString}
+        },
+        function(sendResponse) {
+            var data    = '';
+            sendResponse.setEncoding('utf8');
+            sendResponse.on('data', function(chunk) {
+                data    += chunk;
+            });
+            sendResponse.on('end', function() {
+                actionCallback(null, data);
+            });
+        }
+    );
+    sendRequest.on('error', function(error) {
+        actionCallback(httpMethod + ' ' + httpType + '://' + host + path + ' ERROR => ' + error);
+    });
+    sendRequest.end();
+}
+
 function userLogin(token, tokenSecret, profile, done, subscribe) {
     var connection  = persistance.getConnect();
     var queryStr    = "SELECT Id, Name FROM User WHERE Service=? and UserId=?";
@@ -40,6 +82,54 @@ function userLogin(token, tokenSecret, profile, done, subscribe) {
         }
     });
 }
+
+function loginRequest(type, req, res, next) {
+    console.log('loginRequest: ' + type);
+    passport.authenticate(type,
+        function(err, user, info) {
+            console.log('loginRequest passport callback');
+            if (err)   { console.log('loginRequest passport callback error: ' + err);return res.send({'status':'err','message':err.message}); }
+            if (!user) { console.log('loginRequest passport callback no user');return res.send({'status':'fail','message':info.message}); }
+            console.log('About to logIn');
+            req.logIn(user,
+                function(err) {
+                    console.log('logIn callback');
+                    if (err) { console.log('logIn callback error: ' + err);return res.send({'status':'err','message':err.message}); }
+                    return res.send({'status':'ok'});
+                }
+            );
+        }
+    )(req, res, next);
+}
+function loginRequestError(err, req, res, next) {
+    return res.send({'status':'err','message':err.message});
+}
+function authenticationCallback(type, req, res, next) {
+    console.log('authenticationCallback: ' + type);
+    passport.authenticate(type,
+        function(err, user) {
+            if (err)        { console.log('Err: ' + err);return next(err) }
+            if (!user)      { console.log('No User');    return next("No User");}
+
+            console.log('About to log in');
+            req.login(user,
+                function(err) {
+                    console.log('Login callback');
+                    if (err) { console.log('Login callback error: ' + err);return next(err) };
+                    console.log('Redirect to main page');
+                    res.redirect('/tagfit2/');
+                }
+            );
+        }
+    )(req, res, next);
+}
+
+passport.serializeUser(function(user, done) {
+    done(null, user);
+});
+passport.deserializeUser(function(obj, done) {
+    done(null, obj);
+});
 passport.use(new FitbitStrategy(
     config.passport.fitbit,
     function(token, tokenSecret, profile, done) {
@@ -143,6 +233,7 @@ app.get('/tagfit2/rest/curentUser', function(req, res) {
         res.json({loggedin: false});
     }
 });
+
 app.get('/tagfit2/rest/join/:team_id', function(req, res) {
     if (req.user) {
         var connection  = persistance.getConnect();
@@ -174,102 +265,16 @@ app.get('/tagfit2/rest/join/:team_id', function(req, res) {
         res.json({loggedin: false});
     }
 });
+
 app.get('/tagfit2/rest/logout',  function(req, res, next) {
     req.logout();
     res.redirect("/tagfit2/");
 });
-function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, actionCallback) {
 
-    if(typeof(actionCallback) === 'undefined')  {actionCallback = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
-
-    var consumerSecret  = config.passport.fitbit.consumerSecret;
-    var time        = Math.floor(new Date().getTime()/1000);
-    var nonce       = randomString.generate(16);
-    var parameters  = {
-        'oauth_consumer_key':     config.passport.fitbit.consumerKey,
-        'oauth_nonce':            nonce,
-        'oauth_signature_method': 'HMAC-SHA1',
-        'oauth_timestamp':        time,
-        'oauth_token':            token,
-        'oauth_version':          '1.0'
-    };
-
-    encodedSignature = oauthSignature.generate(httpMethod, httpType + '://' + host + path, parameters, consumerSecret, tokenSecret);
-
-    var oauthString   = "OAuth ";
-    Object.keys(parameters).forEach(function(key) {
-        oauthString   += key + '="' + parameters[key] + '", ';
-    });
-    oauthString += 'oauth_signature="' + encodedSignature + '"';
-
-    var action = httpType == "https" ? https : http;
-    var sendRequest = action.request(
-        {   method:   httpMethod,
-            hostname: host,
-            path:     path,
-            headers:  {Authorization: oauthString}
-        },
-        function(sendResponse) {
-            var data    = '';
-            sendResponse.setEncoding('utf8');
-            sendResponse.on('data', function(chunk) {
-                data    += chunk;
-            });
-            sendResponse.on('end', function() {
-                actionCallback(null, data);
-            });
-        }
-    );
-    sendRequest.on('error', function(error) {
-        actionCallback(httpMethod + ' ' + httpType + '://' + host + path + ' ERROR => ' + error);
-    });
-    sendRequest.end();
-}
-
-function authenticationCallback(type, req, res, next) {
-    console.log('authenticationCallback: ' + type);
-    passport.authenticate(type,
-        function(err, user) {
-            if (err)        { console.log('Err: ' + err);return next(err) }
-            if (!user)      { console.log('No User');    return next("No User");}
-
-            console.log('About to log in');
-            req.login(user,
-                function(err) {
-                    console.log('Login callback');
-                    if (err) { console.log('Login callback error: ' + err);return next(err) };
-                    console.log('Redirect to main page');
-                    res.redirect('/tagfit2/');
-                }
-            );
-        }
-    )(req, res, next);
-}
 // Fitbit login callback point
 app.get('/tagfit2/rest/callback',               function(req, res, next) {authenticationCallback('fitbit',  req, res, next);});
 app.get('/tagfit3/rest/oauthcallback/jawbone',  function(req, res, next) {authenticationCallback('jawbone', req, res, next);});
 
-function loginRequest(type, req, res, next) {
-    console.log('loginRequest: ' + type);
-    passport.authenticate(type,
-        function(err, user, info) {
-            console.log('loginRequest passport callback');
-            if (err)   { console.log('loginRequest passport callback error: ' + err);return res.send({'status':'err','message':err.message}); }
-            if (!user) { console.log('loginRequest passport callback no user');return res.send({'status':'fail','message':info.message}); }
-            console.log('About to logIn');
-            req.logIn(user,
-                function(err) {
-                    console.log('logIn callback');
-                    if (err) { console.log('logIn callback error: ' + err);return res.send({'status':'err','message':err.message}); }
-                    return res.send({'status':'ok'});
-                }
-            );
-        }
-    )(req, res, next);
-}
-function loginRequestError(err, req, res, next) {
-    return res.send({'status':'err','message':err.message});
-}
 // Fitbit login request.
 app.get('/tagfit2/rest/fitbit',
     function(req, res, next) {loginRequest('fitbit', req, res, next);},
