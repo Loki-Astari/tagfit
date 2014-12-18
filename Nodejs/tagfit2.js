@@ -185,7 +185,7 @@ function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, a
     oauthString += 'oauth_signature="' + encodedSignature + '"';
 
     var action = httpType == "https" ? https : http;
-    var sendRequest = https.request(
+    var sendRequest = action.request(
         {   method:   httpMethod,
             hostname: host,
             path:     path,
