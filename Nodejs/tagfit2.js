@@ -276,15 +276,9 @@ app.get('/tagfit2/rest/callback',               function(req, res, next) {authen
 app.get('/tagfit3/rest/oauthcallback/jawbone',  function(req, res, next) {authenticationCallback('jawbone', req, res, next);});
 
 // Fitbit login request.
-app.get('/tagfit2/rest/fitbit',
-    function(req, res, next) {loginRequest('fitbit', req, res, next);},
-    loginRequestError
-);
-// Fitbit login request.
-app.get('/tagfit3/rest/jawbone',
-    function(req, res, next) {loginRequest('jawbone', req, res, next);},
-    loginRequestError
-);
+app.get('/tagfit2/rest/fitbit',                 function(req, res, next) {loginRequest('fitbit', req, res, next);}, loginRequestError);
+app.get('/tagfit3/rest/jawbone',                function(req, res, next) {loginRequest('jawbone', req, res, next);}, loginRequestError);
+
 // Fitbit sends update when user syncs device.
 app.post('/tagfit2/rest/fitbitupdate',
   function(req, res, next) {
