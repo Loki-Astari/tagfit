@@ -10,13 +10,12 @@ var randomString    = require("randomstring");
 var config          = require('../config.js');
 
 
-function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, actionCallback) {
-
-    if(typeof(actionCallback) === 'undefined')  {actionCallback = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
+function makeOAuth1Header(httpMethod, httpType, host, path, token, tokenSecret) {
 
     var consumerSecret  = config.passport.fitbit.consumerSecret;
     var time        = Math.floor(new Date().getTime()/1000);
     var nonce       = randomString.generate(16);
+
     var parameters  = {
         'oauth_consumer_key':     config.passport.fitbit.consumerKey,
         'oauth_nonce':            nonce,
@@ -34,12 +33,18 @@ function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, a
     });
     oauthString += 'oauth_signature="' + encodedSignature + '"';
 
+    return oauthString;
+}
+function makeHttpRequest(httpMethod, httpType, host, path, authHeader, actionCallback) {
+
+    if(typeof(actionCallback) === 'undefined')  {actionCallback  = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
+
     var action = httpType == "https" ? https : http;
     var sendRequest = action.request(
         {   method:   httpMethod,
             hostname: host,
             path:     path,
-            headers:  {Authorization: oauthString}
+            headers:  {Authorization: authHeader}
         },
         function(sendResponse) {
             var data    = '';
@@ -135,7 +140,8 @@ passport.use(new FitbitStrategy(
     function(token, tokenSecret, profile, done) {
         function subscribe() {
             process.nextTick(function() {
-                makeHttpRequest('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json', token, tokenSecret);
+                var authHeader = makeOAuth1Header('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/', token, tokenSecret);
+                makeHttpRequest('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json', authHeader);
             });
         }
         userLogin(token, tokenSecret, {provider: profile.provider, id: profile.id, displayName: profile.displayName}, done, subscribe);
@@ -332,14 +338,15 @@ function updateUserInfo(user) {
         if (err)                {console.log('updateUserInfo: E8: ' + err);return;}
         if (resp.length != 1)   {console.log('updateUserInfo: E9: ' + provider + ' ' + owner);return;}
 
-        makeHttpRequest('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', resp[0].Token, resp[0].TokenSecret, function(err, res){
+        var authHeader = makeOAuth1Header('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', resp[0].Token, resp[0].TokenSecret);
+        makeHttpRequest('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', authHeader, function(err, res){
             if (err) {console.log('updateUserInfo: E10: ' + err);return;}
             var activity    = JSON.parse(res);
             var distance    = activity.summary.distances;
             for(var loop = 0;loop < distance.length; loop++) {
                 if (distance[loop].activity == 'total') {
                     var distanceValue = distance[loop].distance * 1000;
-                    updateUserInfoInDB(resp[loop].Id, resp[loop].LastUpdate, date, distanceValue);
+                    updateUserInfoInDB(resp[0].Id, resp[0].LastUpdate, date, distanceValue);
                     break;
                 }
             }
