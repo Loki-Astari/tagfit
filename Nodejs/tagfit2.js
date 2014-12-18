@@ -166,12 +166,8 @@ app.get('/tagfit2/rest/logout',  function(req, res, next) {
 });
 
 // Fitbit login callback point
-app.get('/tagfit2/rest/callback',               function(req, res, next) {authenticationCallback('fitbit',  req, res, next);});
-app.get('/tagfit3/rest/oauthcallback/jawbone',  function(req, res, next) {authenticationCallback('jawbone', req, res, next);});
-
-// Fitbit login request.
-app.get('/tagfit2/rest/fitbit',                 function(req, res, next) {loginRequest('fitbit', req, res, next);}, loginRequestError);
-app.get('/tagfit3/rest/jawbone',                function(req, res, next) {loginRequest('jawbone', req, res, next);}, loginRequestError);
+app.get('/tagfit2/rest/callback/:service',      function(req, res, next) {authenticationCallback(req.params.service,  req, res, next);});
+app.get('/tagfit2/rest/login/:service',         function(req, res, next) {loginRequest(req.params.service, req, res, next);}, loginRequestError);
 
 
 
