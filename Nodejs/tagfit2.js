@@ -151,7 +151,15 @@ passport.use(new JawBoneStratergy(
     config.passport.jawbone,
     function(token, tokenSecret, profile, done) {
         function subscribe() {
-            // process.nextTick(function() {subscribeUser(profile.id, token, tokenSecret);});
+            process.nextTick(function() {
+                var path        = '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone';
+                var authHeader  = 'Bearer ' + token;
+                makeHttpRequest('POST', 'https', 'jawbone.com', path, authHeader,
+                    function(err, res) {
+                        console.log('Jaw Bone: ' + res);
+                    }
+                );
+            });
         }
         userLogin(token, tokenSecret, {provider: profile.provider, id: profile.xid, displayName: profile.first}, done, subscribe);
     }
@@ -292,15 +300,113 @@ app.post('/tagfit2/rest/fitbitupdate',
     for(var loop=0;loop < req.body.length; loop++)
     {
         var user = req.body[loop];
-        process.nextTick(function() {updateUserInfo(user);});
+        process.nextTick(function() {updateFitBitUser(user);});
     }
     res.status(204).send();
   }
 );
+app.post('/tagfit2/rest/data/jawbone',
+    function(req, res, next) {
+        for(var loop=0;loop < req.body.events; loop++) {
+            var user = req.body.events[loop];
+            process.nextTick(function() {updateJawBoneUser(user);});
+        }
+        console.log('Got Jawbone Data');
+        console.log('Body =>' + JSON.stringify(req.body) + '<=');
+        res.send(200);
+    }
+);
 
-function updateUserInfo(user) {
+function updateJawBoneUser(user) {
+    /*
+    {"secret_hash":"f4746dfc9cca1c7ebaa2302172df6098268bfd84ca362734dc991acaea070148","events":[{"action":"updation","timestamp":1418921314,"user_xid":"oxt54JAuKgDWglepig","type":"move","event_
+    xid":"D_SdL1zals4d_vIoSgpQoV7QkW"}],"notification_timestamp":1418921314}
 
-    // Body: [{"collectionType":"activities","date":"2014-12-15","ownerId":"2WQ3KP","ownerType":"user","subscriptionId":"2WQ3KP"}]
+    GET https://jawbone.com/nudge/api/v.1.1/moves/{xid}
+
+    {"meta":
+     {
+        "user_xid": "xt54JAuKgDWglepig",
+        "message": "OK",
+        "code": 200,
+        "time": 1418925916
+     },
+     "data":
+     {
+        "time_completed": 1418924040,
+        "xid": "L1zals4d_vIoSgpQoV7QkW",
+        "title": "1,557 steps today",
+        "type": "move",
+        "time_created": 1418913300,
+        "time_updated": 1418925916,
+        "details":
+        {
+          "active_time": 798,
+          "tzs": [[1418913300, "America/Los_Angeles"]],
+          "inactive_time": 3900,
+          "wo_count": 0,
+          "wo_longest": 0,
+          "bmr": 524.972646801,
+          "bg_calories": 46.0979999602,
+          "goals": {"steps": 10000},
+          "date": 20141218,
+          "snapshot_image": "/nudge/image/e/1418924716/als4d_vIoSgpQoV7QkW/9fSV-wusY4Q.png",
+          "bmr_day": 1265.20401813,
+          "wo_active_time": 0,
+          "sunrise": 1418917920,
+          "distance": 1148.0,
+          "tz": "America/Los_Angeles",
+          "longest_active": 191,
+          "longest_idle": 1320,
+          "calories": 57.8925001643,
+          "km": 1.148,
+          "steps": 1557,
+          "wo_calories": 0,
+          "wo_time": 0,
+          "sunset": 1418948280
+          "hourly_totals":
+          { "2014121809": { "distance": 219.0, "active_time": 155, "calories": 8.79099994898, "inactive_time": 1560, "longest_idle_time": 1320, "steps": 297, "longest_active_time": 77 },
+            "2014121808": { "distance": 455.0, "active_time": 329, "calories": 18.2209999263, "inactive_time": 2100, "longest_idle_time": 1140, "steps": 625, "longest_active_time": 191 },
+            "2014121807": { "distance": 441.0, "active_time": 293, "calories": 17.7900000811, "inactive_time": 0, "longest_idle_time": 0, "steps": 591, "longest_active_time": 171 },
+            "2014121806": { "distance": 33.0, "active_time": 21, "calories": 1.29600000381, "inactive_time": 0, "longest_idle_time": 0, "steps": 44, "longest_active_time": 21 }
+          }
+        }
+      }
+    }
+
+    */
+
+    if (user.type != 'move' && user.action != 'updation')
+    {
+        console.log('JawBone: Not an Update Move Event (Ignoring)');
+        return;
+    }
+    
+    var provider    = 'jawbone';
+    var owner       = user.user_xid;
+    var timeStamp   = new Date(user.timestamp * 1000);
+    var date        = timeStamp.getFullYear() + '-' + timeStamp.getMonth() + '-' + timeStamp.getDate();
+    console.log('Date: ' + date);
+    var connection  = persistance.getConnect();
+    var queryStr    = "SELECT Id, Token, TokenSecret, DATE_FORMAT(lastUpdate, '%Y-%m-%d') AS LastUpdate FROM User WHERE Service=? and UserId=?";
+    connection.query(queryStr, [provider, owner], function(err, resp) {
+        if (err)                {console.log('updateUserInfo: E14: ' + err);return;}
+        if (resp.length != 1)   {console.log('updateUserInfo: E15: ' + provider + ' ' + owner);return;}
+
+        var authHeader  = 'Bearer ' + resp[0].Token;
+        // GET https://jawbone.com/nudge/api/v.1.1/moves/{xid}
+        makeHttpRequest('GET', 'https', 'jawbone.com', '/nudge/api/v.1.1/moves/' + user.event_xid, authHeader, function(err, res){
+            if (err) {console.log('updateUserInfo: E16: ' + err);return;}
+            var response    = JSON.parse(res);
+            console.log('Distance: ' + response.data.details.distance);
+            updateUserInfoInDB(resp[0].Id, resp[0].LastUpdate, date, response.data.details.distance);
+        });
+    });
+}
+
+function updateFitBitUser(user) {
+
+    // Body: [{"collectionType":"activities","date":"2014-12-15","ownerId":"XXX3KP","ownerType":"user","subscriptionId":"XXX3KP"}]
 
     // GET /1/user/-/activities/date/2010-02-21.json
 
@@ -342,6 +448,7 @@ function updateUserInfo(user) {
         makeHttpRequest('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', authHeader, function(err, res){
             if (err) {console.log('updateUserInfo: E10: ' + err);return;}
             var activity    = JSON.parse(res);
+            console.log(res);
             var distance    = activity.summary.distances;
             for(var loop = 0;loop < distance.length; loop++) {
                 if (distance[loop].activity == 'total') {
