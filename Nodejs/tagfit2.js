@@ -147,7 +147,7 @@ passport.use(new JawBoneStratergy(
         function subscribe() {
             // process.nextTick(function() {subscribeUser(profile.id, token, tokenSecret);});
         }
-        userLogin(token, tokenSecret, {provider: profile.provider, id: profile.xid, displayName: profile.first}, done, subsribe);
+        userLogin(token, tokenSecret, {provider: profile.provider, id: profile.xid, displayName: profile.first}, done, subscribe);
     }
 ));
 
@@ -166,7 +166,7 @@ app.get('/tagfit2/rest/logout',  function(req, res, next) {
 });
 
 // Fitbit login callback point
-app.get('/tagfit2/rest/callback/:service',      function(req, res, next) {authenticationCallback(req.params.service,  req, res, next);});
+app.get('/tagfit2/rest/oauthcallback/:service', function(req, res, next) {authenticationCallback(req.params.service,  req, res, next);});
 app.get('/tagfit2/rest/login/:service',         function(req, res, next) {loginRequest(req.params.service, req, res, next);}, loginRequestError);
 
 
