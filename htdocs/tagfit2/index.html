@@ -64,7 +64,9 @@ function centerMapOnMarker() {
     if (oldMarkers.length > 0) {
         var bounds = new google.maps.LatLngBounds();
         for (var loop = 0; loop < oldMarkers.length; loop++) {
-              bounds.extend(oldMarkers[loop].position);
+            if(typeof oldMarkers[loop].position != 'undefined') {
+                bounds.extend(oldMarkers[loop].position);
+            }
         }
         //  Fit these bounds to the map
         map.fitBounds(bounds);
