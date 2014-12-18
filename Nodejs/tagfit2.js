@@ -1,6 +1,7 @@
 var express         = require('express');
 var passport        = require('passport');
 var FitbitStrategy  = require('passport-fitbit').Strategy;
+var JawBoneStratergy= require('passport-jawbone').Strategy;
 var persistance     = require('./TagFitDB.js');
 var oauthSignature  = require('oauth-signature');
 var https           = require('https');
@@ -15,31 +16,48 @@ passport.serializeUser(function(user, done) {
 passport.deserializeUser(function(obj, done) {
     done(null, obj);
 });
+function userLogin(token, tokenSecret, profile, done, subscribe) {
+    var connection  = persistance.getConnect();
+    var queryStr    = "SELECT Id, Name FROM User WHERE Service=? and UserId=?";
+    connection.query(queryStr, [profile.provider, profile.id], function(err, resp) {
+        if (err) done(err);
+        if (resp.length == 0)
+        {// Name  Service UserId Token TokenSecret TeamId lastUpdate
+            var addUserQuery = "INSERT INTO User (Name, Service, UserId, Token, TokenSecret, TeamId, lastUpdate) VALUES(?, ?, ?, ?, ?, NULL, subdate(now(), 2))";
+            connection.query(addUserQuery, [profile.displayName, profile.provider, profile.id, token, tokenSecret], function(err, resp) {
+                if (err) done(err);
+                subscribe();
+                done(null, {id:resp.insertId, display:profile.displayName, token:token, tokenSecret:tokenSecret});
+            });
+        }
+        else
+        {
+            var updateUserQuery = "UPDATE User SET Token=?, TokenSecret=? WHERE Id=?";
+            connection.query(updateUserQuery, [token, tokenSecret, resp[0].Id], function(err, updateDataResp) {
+                if (err) done(err);
+                done(null, {id: resp[0].Id, display: resp[0].Name, token:token, tokenSecret:tokenSecret});
+            });
+        }
+    });
+}
 passport.use(new FitbitStrategy(
     config.passport.fitbit,
     function(token, tokenSecret, profile, done) {
-        var connection  = persistance.getConnect();
-        var queryStr    = "SELECT Id, Name FROM User WHERE Service=? and UserId=?";
-        connection.query(queryStr, [profile.provider, profile.id], function(err, resp) {
-            if (err) done(err);
-            if (resp.length == 0)
-            {// Name  Service UserId Token TokenSecret TeamId lastUpdate
-                var addUserQuery = "INSERT INTO User (Name, Service, UserId, Token, TokenSecret, TeamId, lastUpdate) VALUES(?, ?, ?, ?, ?, NULL, subdate(now(), 2))";
-                connection.query(addUserQuery, [profile.displayName, profile.provider, profile.id, token, tokenSecret], function(err, resp) {
-                    if (err) done(err);
-                    process.nextTick(function() {subscribeUser(profile.id, token, tokenSecret);});
-                    done(null, {id:resp.insertId, display:profile.displayName, token:token, tokenSecret:tokenSecret});
-                });
-            }
-            else
-            {
-                var updateUserQuery = "UPDATE User SET Token=?, TokenSecret=? WHERE Id=?";
-                connection.query(updateUserQuery, [token, tokenSecret, resp[0].Id], function(err, updateDataResp) {
-                    if (err) done(err);
-                    done(null, {id: resp[0].Id, display: resp[0].Name, token:token, tokenSecret:tokenSecret});
-                });
-            }
-        });
+        function subscribe() {
+            process.nextTick(function() {
+                makeHttpRequest('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json', token, tokenSecret);
+            });
+        }
+        userLogin(token, tokenSecret, {provider: profile.provider, id: profile.id, displayName: profile.displayName}, done, subscribe);
+    }
+));
+passport.use(new JawBoneStratergy(
+    config.passport.jawbone,
+    function(token, tokenSecret, profile, done) {
+        function subscribe() {
+            // process.nextTick(function() {subscribeUser(profile.id, token, tokenSecret);});
+        }
+        userLogin(token, tokenSecret, {provider: profile.provider, id: profile.xid, displayName: profile.first}, done, subsribe);
     }
 ));
 
@@ -207,39 +225,60 @@ function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, a
     });
     sendRequest.end();
 }
-function subscribeUser(userId, token, tokenSecret) {
-    makeHttpRequest('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/' + userId + '.json', token, tokenSecret);
+
+function authenticationCallback(type, req, res, next) {
+    console.log('authenticationCallback: ' + type);
+    passport.authenticate(type,
+        function(err, user) {
+            if (err)        { console.log('Err: ' + err);return next(err) }
+            if (!user)      { console.log('No User');    return next("No User");}
+
+            console.log('About to log in');
+            req.login(user,
+                function(err) {
+                    console.log('Login callback');
+                    if (err) { console.log('Login callback error: ' + err);return next(err) };
+                    console.log('Redirect to main page');
+                    res.redirect('/tagfit2/');
+                }
+            );
+        }
+    )(req, res, next);
 }
-
-
 // Fitbit login callback point
-app.get('/tagfit2/rest/callback',  function(req, res, next) {
-    passport.authenticate('fitbit', function(err, user) {
-        if (err)        { return next(err) }
-        if (!user)      { return next("No User");}
+app.get('/tagfit2/rest/callback',               function(req, res, next) {authenticationCallback('fitbit',  req, res, next);});
+app.get('/tagfit3/rest/oauthcallback/jawbone',  function(req, res, next) {authenticationCallback('jawbone', req, res, next);});
 
-        req.login(user, function(err) {
-            if (err) { return next(err) };
-            res.redirect('/tagfit2/');
-        });
-
-    })(req, res, next);
-});
+function loginRequest(type, req, res, next) {
+    console.log('loginRequest: ' + type);
+    passport.authenticate(type,
+        function(err, user, info) {
+            console.log('loginRequest passport callback');
+            if (err)   { console.log('loginRequest passport callback error: ' + err);return res.send({'status':'err','message':err.message}); }
+            if (!user) { console.log('loginRequest passport callback no user');return res.send({'status':'fail','message':info.message}); }
+            console.log('About to logIn');
+            req.logIn(user,
+                function(err) {
+                    console.log('logIn callback');
+                    if (err) { console.log('logIn callback error: ' + err);return res.send({'status':'err','message':err.message}); }
+                    return res.send({'status':'ok'});
+                }
+            );
+        }
+    )(req, res, next);
+}
+function loginRequestError(err, req, res, next) {
+    return res.send({'status':'err','message':err.message});
+}
 // Fitbit login request.
 app.get('/tagfit2/rest/fitbit',
-  function(req, res, next) {
-    passport.authenticate('fitbit', function(err, user, info) {
-      if (err)   { return res.send({'status':'err','message':err.message}); }
-      if (!user) { return res.send({'status':'fail','message':info.message}); }
-      req.logIn(user, function(err) {
-        if (err) { return res.send({'status':'err','message':err.message}); }
-        return res.send({'status':'ok'});
-      });
-    })(req, res, next);
-  },
-  function(err, req, res, next) {
-    return res.send({'status':'err','message':err.message});
-  }
+    function(req, res, next) {loginRequest('fitbit', req, res, next);},
+    loginRequestError
+);
+// Fitbit login request.
+app.get('/tagfit3/rest/jawbone',
+    function(req, res, next) {loginRequest('jawbone', req, res, next);},
+    loginRequestError
 );
 // Fitbit sends update when user syncs device.
 app.post('/tagfit2/rest/fitbitupdate',
