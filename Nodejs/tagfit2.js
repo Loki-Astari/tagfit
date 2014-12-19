@@ -38,9 +38,11 @@ function makeOAuth1Header(httpMethod, httpType, host, path, token, tokenSecret) 
 
     return oauthString;
 }
-function makeHttpRequest(httpMethod, httpType, host, path, authHeader, actionCallback) {
+function makeHttpRequest(httpMethod, httpType, host, path, makeOAuth, actionCallback) {
 
     if(typeof(actionCallback) === 'undefined')  {actionCallback  = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
+
+    var authHeader = makeOAuth(httpMethod, httpType, host, path, token, tokenSecret);
 
     var action = httpType == "https" ? https : http;
     var sendRequest = action.request(
@@ -143,8 +145,8 @@ passport.use(new FitbitStrategy(
     function(token, tokenSecret, profile, done) {
         function subscribe() {
             process.nextTick(function() {
-                var authHeader = makeOAuth1Header('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/', token, tokenSecret);
-                makeHttpRequest('POST', 'https', 'api.fitbit.com', '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json', authHeader);
+                var path        = '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json';
+                makeHttpRequest('POST', 'https', 'api.fitbit.com', path, makeOAuth1Header);
             });
         }
         userLogin(token, tokenSecret, {provider: profile.provider, id: profile.id, displayName: profile.displayName}, done, subscribe);
@@ -156,8 +158,7 @@ passport.use(new JawBoneStratergy(
         function subscribe() {
             process.nextTick(function() {
                 var path        = '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone';
-                var authHeader = makeJawBoneOAuth2('POST', 'https', 'jawbone.com', path, token, tokenSecret);
-                makeHttpRequest('POST', 'https', 'jawbone.com', path, authHeader,
+                makeHttpRequest('POST', 'https', 'jawbone.com', path, makeJawBoneOAuth2,
                     function(err, res) {
                         console.log('Jaw Bone: ' + res);
                     }
@@ -398,8 +399,7 @@ function updateJawBoneUser(user) {
 
         // GET https://jawbone.com/nudge/api/v.1.1/moves/{xid}
         var path       = '/nudge/api/v.1.1/moves/' + user.event_xid;
-        var authHeader = makeJawBoneOAuth2('GET', 'https', 'jawbone.com', path, resp[0].Token, resp[0].TokenSecret);
-        makeHttpRequest('GET', 'https', 'jawbone.com', path, authHeader, function(err, res){
+        makeHttpRequest('GET', 'https', 'jawbone.com', path, makeJawBoneOAuth2, function(err, res){
             if (err) {console.log('updateUserInfo: E16: ' + err);return;}
             var response    = JSON.parse(res);
             console.log('Distance: ' + response.data.details.distance);
@@ -448,8 +448,8 @@ function updateFitBitUser(user) {
         if (err)                {console.log('updateUserInfo: E8: ' + err);return;}
         if (resp.length != 1)   {console.log('updateUserInfo: E9: ' + provider + ' ' + owner);return;}
 
-        var authHeader = makeOAuth1Header('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', resp[0].Token, resp[0].TokenSecret);
-        makeHttpRequest('GET', 'https', 'api.fitbit.com', '/1/user/-/activities/date/'+date+'.json', authHeader, function(err, res){
+        var path = '/1/user/-/activities/date/'+date+'.json';
+        makeHttpRequest('GET', 'https', 'api.fitbit.com', path, makeOAuth1Header, function(err, res){
             if (err) {console.log('updateUserInfo: E10: ' + err);return;}
             var activity    = JSON.parse(res);
             console.log(res);
