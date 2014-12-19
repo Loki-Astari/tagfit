@@ -7,6 +7,7 @@
         "express": "3.4.6",
         "passport": ">= 0.0.0",
         "passport-fitbit": ">= 0.0.0",
+        "passport-runkeeper": " >= 0.0.0",
         "mysql": ">= 0.0.0",
         "oauth-signature": ">= 0.0.0",
         "https": ">= 0.0.0",
