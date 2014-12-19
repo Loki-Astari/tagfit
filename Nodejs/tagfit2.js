@@ -133,6 +133,14 @@ function authenticationCallback(type, req, res, next) {
         }
     )(req, res, next);
 }
+function authenticationLogin(httpMethod, httpType, host, path, token, tokenSecret, profile, done, makeOAuth, actionCallback) {
+    function subscribe() {
+        process.nextTick(function() {
+            makeHttpRequest(httpMethod, httpType, host, path, makeOAuth1Header, actionCallback);
+        });
+    }
+    userLogin(token, tokenSecret,  profile, done, subscribe);
+}
 
 passport.serializeUser(function(user, done) {
     done(null, user);
@@ -143,29 +151,25 @@ passport.deserializeUser(function(obj, done) {
 passport.use(new FitbitStrategy(
     config.passport.fitbit,
     function(token, tokenSecret, profile, done) {
-        function subscribe() {
-            process.nextTick(function() {
-                var path        = '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json';
-                makeHttpRequest('POST', 'https', 'api.fitbit.com', path, makeOAuth1Header);
-            });
-        }
-        userLogin(token, tokenSecret, {provider: profile.provider, id: profile.id, displayName: profile.displayName}, done, subscribe);
+        authenticationLogin('POST',
+                            'https',
+                            'api.fitbit.com',
+                            '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json',
+                            token, tokenSecret,
+                            {provider: profile.provider, id: profile.id, displayName: profile.displayName},
+                            done, makeOAuth1Header);
     }
 ));
 passport.use(new JawBoneStratergy(
     config.passport.jawbone,
     function(token, tokenSecret, profile, done) {
-        function subscribe() {
-            process.nextTick(function() {
-                var path        = '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone';
-                makeHttpRequest('POST', 'https', 'jawbone.com', path, makeJawBoneOAuth2,
-                    function(err, res) {
-                        console.log('Jaw Bone: ' + res);
-                    }
-                );
-            });
-        }
-        userLogin(token, tokenSecret, {provider: profile.provider, id: profile.xid, displayName: profile.first}, done, subscribe);
+        authenticationLogin('POST',
+                            'https',
+                            'jawbone.com',
+                            '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone',
+                            token, tokenSecret,
+                            {provider: profile.provider, id: profile.xid, displayName: profile.first},
+                            done, makeJawBoneOAuth2);
     }
 ));
 
