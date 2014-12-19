@@ -10,6 +10,9 @@ var randomString    = require("randomstring");
 var config          = require('../config.js');
 
 
+function makeJawBoneOAuth2(httpMethod, httpType, host, path, token, tokenSecret) {
+    return 'Bearer ' + token;
+}
 function makeOAuth1Header(httpMethod, httpType, host, path, token, tokenSecret) {
 
     var consumerSecret  = config.passport.fitbit.consumerSecret;
@@ -153,7 +156,7 @@ passport.use(new JawBoneStratergy(
         function subscribe() {
             process.nextTick(function() {
                 var path        = '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone';
-                var authHeader  = 'Bearer ' + token;
+                var authHeader = makeJawBoneOAuth2('POST', 'https', 'jawbone.com', path, token, tokenSecret);
                 makeHttpRequest('POST', 'https', 'jawbone.com', path, authHeader,
                     function(err, res) {
                         console.log('Jaw Bone: ' + res);
@@ -393,9 +396,10 @@ function updateJawBoneUser(user) {
         if (err)                {console.log('updateUserInfo: E14: ' + err);return;}
         if (resp.length != 1)   {console.log('updateUserInfo: E15: ' + provider + ' ' + owner);return;}
 
-        var authHeader  = 'Bearer ' + resp[0].Token;
         // GET https://jawbone.com/nudge/api/v.1.1/moves/{xid}
-        makeHttpRequest('GET', 'https', 'jawbone.com', '/nudge/api/v.1.1/moves/' + user.event_xid, authHeader, function(err, res){
+        var path       = '/nudge/api/v.1.1/moves/' + user.event_xid;
+        var authHeader = makeJawBoneOAuth2('GET', 'https', 'jawbone.com', path, resp[0].Token, resp[0].TokenSecret);
+        makeHttpRequest('GET', 'https', 'jawbone.com', path, authHeader, function(err, res){
             if (err) {console.log('updateUserInfo: E16: ' + err);return;}
             var response    = JSON.parse(res);
             console.log('Distance: ' + response.data.details.distance);
