@@ -321,20 +321,21 @@ app.get('/tagfit2/rest/join/:team_id', function(req, res) {
 app.post('/tagfit2/rest/fitbitupdate',
   function(req, res, next) {
 
-    for(var loop=0;loop < req.body.length; loop++)
-    {
-        var user = req.body[loop];
+    req.body.forEach(function(user) {
         process.nextTick(function() {updateFitBitUser(user);});
-    }
+    });
+    console.log('Got FitBit Data');
+    console.log('Body =>' + JSON.stringify(req.body) + '<=');
     res.status(204).send();
   }
 );
 app.post('/tagfit2/rest/data/jawbone',
     function(req, res, next) {
-        for(var loop=0;loop < req.body.events; loop++) {
-            var user = req.body.events[loop];
+        console.log('JawBone Events: ' + req.body.events.length);
+        req.body.events.forEach(function(user) {
+            console.log('JawBone: New Event');
             process.nextTick(function() {updateJawBoneUser(user);});
-        }
+        });
         console.log('Got Jawbone Data');
         console.log('Body =>' + JSON.stringify(req.body) + '<=');
         res.send(200);
