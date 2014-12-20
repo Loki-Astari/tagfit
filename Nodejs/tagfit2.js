@@ -38,7 +38,7 @@ function makeOAuth1Header(httpMethod, httpType, host, path, token, tokenSecret) 
 
     return oauthString;
 }
-function makeHttpRequest(httpMethod, httpType, host, path, makeOAuth, actionCallback) {
+function makeHttpRequest(httpMethod, httpType, host, path, token, tokenSecret, makeOAuth, actionCallback) {
 
     if(typeof(actionCallback) === 'undefined')  {actionCallback  = function(err, body){if (err) {console.log('makeHttpRequest: ' + err);}};}
 
@@ -68,7 +68,17 @@ function makeHttpRequest(httpMethod, httpType, host, path, makeOAuth, actionCall
     sendRequest.end();
 }
 
-function userLogin(token, tokenSecret, profile, done, subscribe) {
+function userLogin(httpMethod, httpType, host, path, token, tokenSecret, profile, done, makeOAuth, loginAction) {
+
+    var subscribe =function() {
+        if (path) {
+            process.nextTick(function() {
+                makeHttpRequest(httpMethod, httpType, host, path,token, tokenSecret,  makeOAuth);
+            });
+        }
+    }
+    if(typeof(loginAction) === 'undefined')  {loginAction  = function(){};}
+
     var connection  = persistance.getConnect();
     var queryStr    = "SELECT Id, Name FROM User WHERE Service=? and UserId=?";
     connection.query(queryStr, [profile.provider, profile.id], function(err, resp) {
@@ -79,6 +89,7 @@ function userLogin(token, tokenSecret, profile, done, subscribe) {
             connection.query(addUserQuery, [profile.displayName, profile.provider, profile.id, token, tokenSecret], function(err, resp) {
                 if (err) done(err);
                 subscribe();
+                loginAction();
                 done(null, {id:resp.insertId, display:profile.displayName, token:token, tokenSecret:tokenSecret});
             });
         }
@@ -87,6 +98,7 @@ function userLogin(token, tokenSecret, profile, done, subscribe) {
             var updateUserQuery = "UPDATE User SET Token=?, TokenSecret=? WHERE Id=?";
             connection.query(updateUserQuery, [token, tokenSecret, resp[0].Id], function(err, updateDataResp) {
                 if (err) done(err);
+                loginAction();
                 done(null, {id: resp[0].Id, display: resp[0].Name, token:token, tokenSecret:tokenSecret});
             });
         }
@@ -133,15 +145,6 @@ function authenticationCallback(type, req, res, next) {
         }
     )(req, res, next);
 }
-function authenticationLogin(httpMethod, httpType, host, path, token, tokenSecret, profile, done, makeOAuth, actionCallback) {
-    function subscribe() {
-        process.nextTick(function() {
-            makeHttpRequest(httpMethod, httpType, host, path, makeOAuth1Header, actionCallback);
-        });
-    }
-    userLogin(token, tokenSecret,  profile, done, subscribe);
-}
-
 passport.serializeUser(function(user, done) {
     done(null, user);
 });
@@ -151,27 +154,28 @@ passport.deserializeUser(function(obj, done) {
 passport.use(new FitbitStrategy(
     config.passport.fitbit,
     function(token, tokenSecret, profile, done) {
-        authenticationLogin('POST',
-                            'https',
-                            'api.fitbit.com',
-                            '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json',
-                            token, tokenSecret,
-                            {provider: profile.provider, id: profile.id, displayName: profile.displayName},
-                            done, makeOAuth1Header);
+        userLogin('POST',
+                  'https',
+                  'api.fitbit.com',
+                  '/1/user/-/activities/apiSubscriptions/' + profile.id + '.json',
+                  token, tokenSecret,
+                  {provider: profile.provider, id: profile.id, displayName: profile.displayName},
+                  done, makeOAuth1Header);
     }
 ));
 passport.use(new JawBoneStratergy(
     config.passport.jawbone,
     function(token, tokenSecret, profile, done) {
-        authenticationLogin('POST',
-                            'https',
-                            'jawbone.com',
-                            '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone',
-                            token, tokenSecret,
-                            {provider: profile.provider, id: profile.xid, displayName: profile.first},
-                            done, makeJawBoneOAuth2);
+        userLogin('POST',
+                  'https',
+                  'jawbone.com',
+                  '/nudge/api/v.1.1/users/@me/pubsub?webhook=http%3A%2F%2Fthorsanvil.com%2Ftagfit2%2Frest%2Fdata%2Fjawbone',
+                  token, tokenSecret,
+                  {provider: profile.provider, id: profile.xid, displayName: profile.first},
+                  done, makeJawBoneOAuth2);
     }
 ));
+
 
 var app     = express();
 app.configure(function() {
@@ -453,7 +457,7 @@ function updateFitBitUser(user) {
         if (resp.length != 1)   {console.log('updateUserInfo: E9: ' + provider + ' ' + owner);return;}
 
         var path = '/1/user/-/activities/date/'+date+'.json';
-        makeHttpRequest('GET', 'https', 'api.fitbit.com', path, makeOAuth1Header, function(err, res){
+        makeHttpRequest('GET', 'https', 'api.fitbit.com', path, resp[0].Token, resp[0].TokenSecret, makeOAuth1Header, function(err, res){
             if (err) {console.log('updateUserInfo: E10: ' + err);return;}
             var activity    = JSON.parse(res);
             console.log(res);
