@@ -2,6 +2,7 @@ var express         = require('express');
 var passport        = require('passport');
 var FitbitStrategy  = require('passport-fitbit').Strategy;
 var JawBoneStratergy= require('passport-jawbone').Strategy;
+var RunKeeperStratergy= require('passport-runkeeper').Strategy;
 var persistance     = require('./TagFitDB.js');
 var oauthSignature  = require('oauth-signature');
 var https           = require('https');
@@ -175,6 +176,17 @@ passport.use(new JawBoneStratergy(
                   done, makeJawBoneOAuth2);
     }
 ));
+passport.use(new RunKeeperStratergy(
+    config.passport.runkeeper,
+    function(token, tokenSecret, profile, done) {
+        console.log('RunKeeper: ' + JSON.stringify(profile));
+        userLogin(null, null, null, null,
+                  token, tokenSecret,
+                  {provider: profile.provider, id: profile.id, displayName: 'RunKeeper ID'},
+                  done, makeJawBoneOAuth2,
+                  function()    {updateRunKeeperUser(profile, token, tokenSecret);});
+    }
+));
 
 
 var app     = express();
@@ -329,6 +341,29 @@ app.post('/tagfit2/rest/data/jawbone',
     }
 );
 
+function updateRunKeeperUser(user, token, tokenSecret) {
+    console.log('Runkeeper: ' + JSON.stringify(user));
+    var fitnessActivities = user._json.fitness_activities;
+    console.log('Runkeeper: ' + fitnessActivities);
+
+    makeHttpRequest('GET', 'https', 'api.runkeeper.com', fitnessActivities, token, tokenSecret, makeJawBoneOAuth2, function(err, res){
+        if (err) {console.log('updateRunKeeperUser: E17: ' + err);return;}
+
+    /*
+        {"items":[ {"utc_offset":-8,
+                    "duration":600,
+                    "total_distance":1366.18253679576,
+                    "has_path":true,
+                    "entry_mode":"Web",
+                    "source":"RunKeeper",
+                    "start_time":"Fri, 19 Dec:191,
+                    "type":"Running",
+                    "uri":"/fitnessActivities/484438540"
+                 }],
+         "size":1
+        }*/
+    });
+}
 function updateJawBoneUser(user) {
     /*
     {"secret_hash":"f4746dfc9cca1c7ebaa2302172df6098268bfd84ca362734dc991acaea070148","events":[{"action":"updation","timestamp":1418921314,"user_xid":"oxt54JAuKgDWglepig","type":"move","event_
