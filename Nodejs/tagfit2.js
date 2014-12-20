@@ -434,7 +434,8 @@ function updateJawBoneUser(user) {
     var owner       = user.user_xid;
     var timeStamp   = new Date(user.timestamp * 1000);
     var date        = timeStamp.getFullYear() + '-' + timeStamp.getMonth() + '-' + timeStamp.getDate();
-    console.log('Date: ' + date);
+    console.log('JawBone Date: ' + date);
+    console.log('JawBoneUser: ' + owner);
     var connection  = persistance.getConnect();
     var queryStr    = "SELECT Id, Token, TokenSecret, DATE_FORMAT(lastUpdate, '%Y-%m-%d') AS LastUpdate FROM User WHERE Service=? and UserId=?";
     connection.query(queryStr, [provider, owner], function(err, resp) {
@@ -443,13 +444,14 @@ function updateJawBoneUser(user) {
 
         // GET https://jawbone.com/nudge/api/v.1.1/moves/{xid}
         var path       = '/nudge/api/v.1.1/moves/' + user.event_xid;
-        makeHttpRequest('GET', 'https', 'jawbone.com', path, makeJawBoneOAuth2, function(err, res){
+        makeHttpRequest('GET', 'https', 'jawbone.com', path, resp[0].Token, resp[0].TokenSecret, makeJawBoneOAuth2, function(err, res){
             if (err) {console.log('updateUserInfo: E16: ' + err);return;}
             var response    = JSON.parse(res);
             console.log('Distance: ' + response.data.details.distance);
             updateUserInfoInDB(resp[0].Id, resp[0].LastUpdate, date, response.data.details.distance);
         });
     });
+    console.log('JawBone Done');
 }
 
 function updateFitBitUser(user) {
