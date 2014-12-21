@@ -81,17 +81,18 @@ function userLogin(httpMethod, httpType, host, path, token, tokenSecret, profile
     if(typeof(loginAction) === 'undefined')  {loginAction  = function(){};}
 
     var connection  = persistance.getConnect();
-    var queryStr    = "SELECT Id, Name FROM User WHERE Service=? and UserId=?";
+    var queryStr    = "SELECT Id, Name, lastUpdate, mark FROM User WHERE Service=? and UserId=?";
     connection.query(queryStr, [profile.provider, profile.id], function(err, resp) {
         if (err) done(err);
         if (resp.length == 0)
         {// Name  Service UserId Token TokenSecret TeamId lastUpdate
             var addUserQuery = "INSERT INTO User (Name, Service, UserId, Token, TokenSecret, TeamId, lastUpdate) VALUES(?, ?, ?, ?, ?, NULL, subdate(now(), 2))";
+            var user = {id:resp.insertId, display:profile.displayName, token:token, tokenSecret:tokenSecret};
             connection.query(addUserQuery, [profile.displayName, profile.provider, profile.id, token, tokenSecret], function(err, resp) {
                 if (err) done(err);
                 subscribe();
-                loginAction();
-                done(null, {id:resp.insertId, display:profile.displayName, token:token, tokenSecret:tokenSecret});
+                loginAction(user, '', '');
+                done(null, user);
             });
         }
         else
@@ -99,8 +100,9 @@ function userLogin(httpMethod, httpType, host, path, token, tokenSecret, profile
             var updateUserQuery = "UPDATE User SET Token=?, TokenSecret=? WHERE Id=?";
             connection.query(updateUserQuery, [token, tokenSecret, resp[0].Id], function(err, updateDataResp) {
                 if (err) done(err);
-                loginAction();
-                done(null, {id: resp[0].Id, display: resp[0].Name, token:token, tokenSecret:tokenSecret});
+                var user = {id: resp[0].Id, display: resp[0].Name, token:token, tokenSecret:tokenSecret};
+                loginAction(user, resp[0].lastUpdate, resp[0].mark);
+                done(null, user);
             });
         }
     });
@@ -179,12 +181,11 @@ passport.use(new JawBoneStratergy(
 passport.use(new RunKeeperStratergy(
     config.passport.runkeeper,
     function(token, tokenSecret, profile, done) {
-        console.log('RunKeeper: ' + JSON.stringify(profile));
         userLogin(null, null, null, null,
                   token, tokenSecret,
                   {provider: profile.provider, id: profile.id, displayName: 'RunKeeper ID'},
                   done, makeJawBoneOAuth2,
-                  function()    {updateRunKeeperUser(profile, token, tokenSecret);});
+                  function(user, lastUpdate, mark)    {updateRunKeeperUser(profile, lastUpdate, mark, user, token, tokenSecret);});
     }
 ));
 
@@ -342,28 +343,82 @@ app.post('/tagfit2/rest/data/jawbone',
     }
 );
 
-function updateRunKeeperUser(user, token, tokenSecret) {
-    console.log('Runkeeper: ' + JSON.stringify(user));
-    var fitnessActivities = user._json.fitness_activities;
-    console.log('Runkeeper: ' + fitnessActivities);
+function updateRunKeeperUserNoData(profile, lastUpdate, mark, user, token, tokenSecret, fitnessActivities) {
+    var mark="????";
 
     makeHttpRequest('GET', 'https', 'api.runkeeper.com', fitnessActivities, token, tokenSecret, makeJawBoneOAuth2, function(err, res){
-        if (err) {console.log('updateRunKeeperUser: E17: ' + err);return;}
 
-    /*
-        {"items":[ {"utc_offset":-8,
-                    "duration":600,
-                    "total_distance":1366.18253679576,
-                    "has_path":true,
-                    "entry_mode":"Web",
-                    "source":"RunKeeper",
-                    "start_time":"Fri, 19 Dec:191,
-                    "type":"Running",
-                    "uri":"/fitnessActivities/484438540"
-                 }],
-         "size":1
-        }*/
+        if (err) {console.log('updateRunKeeperUser: E19: ' + err);return;}
+        var data    = JSON.parse(res);
+
+        if (data.items.length > 0) {
+            mark = data.items[0].uri;
+        }
+
+        var connection  = persistance.getConnect();
+        var updateStr   = "UPDATE User SET mark=? WHERE Id=?";
+        connection.query(updateStr, [mark, user.id], function(err, resp) {
+            if (err) {console.log('updateRunKeeperUser: E18: ' + err);return;}
+        });
     });
+}
+
+function updateRunKeeperUserDataInsert(profile, lastUpdate, mark, user, token, tokenSecret, actions) {
+    console.log('Insert: ' + actions.length);
+
+    actions.reverse();
+    for(var loop = 0;loop < actions.length; loop++) {
+        console.log('Incremental Update');
+
+        var     item        = actions[loop];
+        var     dateString  = item.start_time; //"start_time":"Sat, 20 Dec 2014 14:34:09",
+        var     timeStamp   = new Date(dateString);
+        var     date        = timeStamp.getFullYear() + '-' + timeStamp.getMonth() + '-' + timeStamp.getDate();
+
+        updateUserInfoInDB(user.id, lastUpdate, date, item.total_distance, item.uri);
+
+        lastUpdate = date;
+    }
+}
+function updateRunKeeperUserDataFind(profile, lastUpdate, mark, user, token, tokenSecret, next, actions) {
+    console.log('Find: ' + actions.length);
+
+    makeHttpRequest('GET', 'https', 'api.runkeeper.com', next, token, tokenSecret, makeJawBoneOAuth2, function(err, res){
+        if (err) {console.log('updateRunKeeperUser: E17: ' + err);return;}
+        console.log('Got Data: ' + res);
+
+        var data    = JSON.parse(res);
+
+        var items   = data.items;
+        for(var loop = 0;loop < items.length; loop++) {
+            if (items[loop].uri == mark) {
+                updateRunKeeperUserDataInsert(profile, lastUpdate, mark, user, token, tokenSecret, actions.concat(items.slice(0, loop)));
+                return;
+            }
+        }
+
+        if (!data.next) {
+            updateRunKeeperUserDataInsert(profile, lastUpdate, mark, user, token, tokenSecret, actions.concat(items));
+        }
+        else {
+            updateRunKeeperUserDataFind(profile, lastUpdate, mark, user, token, tokenSecret, data.next, actions.concat(items));
+        }
+    });
+}
+        
+function updateRunKeeperUser(profile, lastUpdate, mark, user, token, tokenSecret) {
+    console.log('Runkeeper: ' + JSON.stringify(profile));
+    var fitnessActivities = profile._json.fitness_activities;
+    console.log('Runkeeper: ' + fitnessActivities);
+
+    if (!mark) {
+        console.log('No Mark: Doing No Data');
+        updateRunKeeperUserNoData(profile, lastUpdate, mark, user, token, tokenSecret, fitnessActivities);
+    }
+    else {
+        console.log('Mark: Doing Find');
+        updateRunKeeperUserDataFind(profile, lastUpdate, mark, user, token, tokenSecret, fitnessActivities, []);
+    }
 }
 function updateJawBoneUser(user) {
     /*
@@ -511,15 +566,15 @@ function updateFitBitUser(user) {
     });
 }
 
-function updateUserInfoInDB(userId, lastUpdate, thisUpdate, distance) {
+function updateUserInfoInDB(userId, lastUpdate, thisUpdate, distance, mark) {
 
     var connection  = persistance.getConnect();
     if (lastUpdate != thisUpdate) {
         var insertStr   = "INSERT INTO UserInfo (UserId, lastUpdate, Distance) VALUES(?, ?, ?)";
         connection.query(insertStr, [userId, thisUpdate, distance], function(err, rep) {
             if (err) {console.log('updateUserInfoInDB: E11: ' + err);return;}
-            var updateStr   = "UPDATE User Set lastUpdate=? where Id=?";
-            connection.query(updateStr,[thisUpdate, userId], function(err, rep) {
+            var updateStr   = "UPDATE User SET lastUpdate=?, mark=? WHERE Id=?";
+            connection.query(updateStr,[thisUpdate, mark, userId], function(err, rep) {
                 if (err) {console.log('updateUserInfoInDB: E12: ' + err);return;}
                 console.log('User: ' + userId + ' NewData: ' + distance + ' For: ' + thisUpdate);
             });
@@ -527,10 +582,21 @@ function updateUserInfoInDB(userId, lastUpdate, thisUpdate, distance) {
     }
     else {
         var updateStr   = "UPDATE UserInfo SET Distance=? WHERE UserId=? AND lastUpdate=?";
+        if (mark) {
+            updateStr   = "UPDATE UserInfo SET Distance=Distance+? WHERE UserId=? AND lastUpdate=?";
+        }
+
         connection.query(updateStr, [distance, userId, lastUpdate], function(err, rep) {
             if (err) {console.log('updateUserInfoInDB: E13: ' + err);return}
             console.log('User: ' + userId + ' Update: ' + distance + ' For: ' + thisUpdate);
         });
+        if (mark) {
+            var updateStr   = "UPDATE User SET lastUpdate=?, mark=? WHERE Id=?";
+            connection.query(updateStr,[thisUpdate, mark, userId], function(err, rep) {
+                if (err) {console.log('updateUserInfoInDB: E19: ' + err);return;}
+                console.log('User: ' + userId + ' NewData: ' + distance + ' For: ' + thisUpdate);
+            });
+        }
     }
 }
 
